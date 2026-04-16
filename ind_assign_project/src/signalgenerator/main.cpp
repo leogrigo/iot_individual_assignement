@@ -16,9 +16,9 @@ struct SineComponent {
 // Somma di seni: aggiungi/rimuovi righe per cambiare il segnale generato.
 // Mantieni la somma delle ampiezze abbastanza sotto 127 per evitare clipping.
 constexpr SineComponent SIGNAL_COMPONENTS[] = {
-    {3.0f, 10.0f, 0.0f},
-    {7.0f, 25.0f, 0.0f},
-    {13.0f, 15.0f, 0.0f},
+    {3.0f, 50.0f, 0.0f},
+    {13.0f, 20.0f, 0.0f},
+    {30.0f, 2.0f, 0.0f},
 };
 
 constexpr size_t COMPONENT_COUNT = sizeof(SIGNAL_COMPONENTS) / sizeof(SIGNAL_COMPONENTS[0]);
