@@ -1,71 +1,42 @@
 #include <Arduino.h>
 #include <arduinoFFT.h>
 #include <math.h>
+#include "comm_edge.hpp"
+#include "utils.hpp"
 
-// =========================
 // Configuration
-// =========================
-constexpr int ADC_PIN = 1;
-constexpr uint16_t SAMPLES = 16384;                  // must be power of 2
+constexpr int ADC_PIN = 1; // Heltec v3 ADC pin
 constexpr uint32_t INITIAL_SAMPLE_PERIOD_US = 61;    // ~16.4 kHz target
+constexpr uint32_t AGGREGATION_WINDOW_MS = 5000; // 5 seconds for mean aggregation
 
-constexpr float SIGNIFICANCE_RATIO = 0.018f;
-constexpr float ADAPTIVE_MARGIN = 1.5f;
-constexpr float MIN_ADAPTED_FS = 10.0f;
+constexpr float SIGNIFICANCE_RATIO = 0.018f; // Threshold for significant peaks in the FFT, as a ratio of the maximum magnitude
+constexpr float ADAPTIVE_MARGIN = 1.5f;       // Margin for adaptive thresholding
+constexpr float MIN_ADAPTED_FS = 10.0f;      // Minimum adapted sampling frequency
 
-constexpr size_t FFT_BUFFER_COUNT = 3;
+constexpr size_t FFT_BUFFER_COUNT = 2;
 constexpr size_t FFT_READY_QUEUE_LENGTH = FFT_BUFFER_COUNT;
 constexpr size_t FFT_FREE_QUEUE_LENGTH  = FFT_BUFFER_COUNT;
-
 constexpr size_t SAMPLE_QUEUE_LENGTH = 256;
 constexpr size_t COMM_QUEUE_LENGTH = 4;
 
-using FFTValue = float;
-
 constexpr bool FFT_DEBUG_VERBOSE = false;
 
-// =========================
-// Data structures
-// =========================
-struct FFTSampleWindow {
-    uint32_t window_id;
-    float fs_eff;
-    uint64_t window_start_us;
-    uint64_t window_end_us;
-    FFTValue samples[SAMPLES];
-};
-
-struct Sample {
-    float value;
-    uint32_t timestamp_us;
-};
-
-struct AggregatedValue {
-    uint32_t window_id;
-    float rms;
-    float duration_ms;
-};
-
-// =========================
 // Queues
-// =========================
 QueueHandle_t fftReadyQueue = nullptr;       // contains FFTSampleWindow*
 QueueHandle_t fftFreeQueue = nullptr;        // contains FFTSampleWindow*
 QueueHandle_t sampleQueue = nullptr;         // contains Sample
 QueueHandle_t communicationQueue = nullptr;  // contains AggregatedValue
 
-// =========================
 // Global/shared state
-// =========================
 volatile uint32_t sample_period_us_global = INITIAL_SAMPLE_PERIOD_US;
-volatile uint32_t aggregation_window_ms = 5000;
+volatile uint32_t aggregation_window_ms = AGGREGATION_WINDOW_MS;
 
-static FFTValue vImag[SAMPLES];
-static FFTSampleWindow fftBuffers[FFT_BUFFER_COUNT];
+static FFTValue vImag[SAMPLES]; // Imaginary part for FFT computation
+static FFTSampleWindow fftBuffers[FFT_BUFFER_COUNT]; // Pre-allocated buffers for FFT processing, managed via queues
 
-// =========================
-// Helper: safe queue creation check
-// =========================
+// ===== Helpers =====
+
+// Safe queue creation check
 static bool createQueues() {
     fftReadyQueue = xQueueCreate(FFT_READY_QUEUE_LENGTH, sizeof(FFTSampleWindow*));
     fftFreeQueue  = xQueueCreate(FFT_FREE_QUEUE_LENGTH,  sizeof(FFTSampleWindow*));
@@ -78,9 +49,9 @@ static bool createQueues() {
             communicationQueue != nullptr);
 }
 
-// =========================
-// Task: Sampling
-// =========================
+// ===== Tasks =====
+
+// Task for sampling data
 void TaskSample(void* pvParameters) {
     FFTSampleWindow* fillBuffer = nullptr;
 
@@ -144,9 +115,7 @@ void TaskSample(void* pvParameters) {
     }
 }
 
-// =========================
-// Task: FFT analysis
-// =========================
+// Task for computing FFT and analyzing results
 void TaskFFT(void* pvParameters) {
     for (;;) {
         FFTSampleWindow* window = nullptr;
@@ -288,7 +257,7 @@ void TaskFFT(void* pvParameters) {
             Serial.println("==================================");
         }
         else {
-            Serial.printf("Buffer %lu: fmax %.3f Hz, adapt fs %.3f Hz\n",
+            Serial.printf("FFT Buffer %lu: fmax %.3f Hz, adapt fs %.3f Hz\n",
                           static_cast<unsigned long>(local_buffer_id),
                           f_ref,
                           fs_adapted);
@@ -301,11 +270,9 @@ void TaskFFT(void* pvParameters) {
     }
 }
 
-// =========================
-// Task: Aggregate value (Root Mean Square)
-// =========================
+// Task for computing the aggregate value (mean)
 void TaskAggregateValue(void* pvParameters) {
-    float sum_sq = 0.0f;
+    float sum = 0.0f;
     uint32_t sample_count = 0;
     uint64_t window_start_us = 0;
     uint32_t aggregate_window_id = 0;
@@ -319,7 +286,7 @@ void TaskAggregateValue(void* pvParameters) {
             aggregate_window_id++;
         }
 
-        sum_sq += sample.value * sample.value;
+        sum += sample.value;
         sample_count++;
 
         const float elapsed_ms =
@@ -328,33 +295,39 @@ void TaskAggregateValue(void* pvParameters) {
         if (elapsed_ms >= static_cast<float>(aggregation_window_ms) && sample_count > 0) {
             AggregatedValue agg;
             agg.window_id = aggregate_window_id;
-            agg.rms = sqrtf(sum_sq / static_cast<float>(sample_count));
+            agg.mean = sum / static_cast<float>(sample_count);
             agg.duration_ms = elapsed_ms;
 
             xQueueSend(communicationQueue, &agg, portMAX_DELAY);
 
-            sum_sq = 0.0f;
+            sum = 0.0f;
             sample_count = 0;
             window_start_us = 0;
         }
     }
 }
 
-// =========================
-// Task: Communication
-// =========================
+// Task for handling communication with the edge server and cloud
 void TaskCommunication(void* pvParameters) {
+    edge_comm_init();
     for (;;) {
+        edge_comm_loop();
         AggregatedValue agg{};
         if (xQueueReceive(communicationQueue, &agg, portMAX_DELAY) == pdTRUE) {
-            // TODO: MQTT / LoRaWAN
+            bool edge_sent = edge_comm_send(agg);
+            if(edge_sent) { Serial.printf("Sent aggregate value to edge: window_id=%lu, mean=%.3f, duration=%.1f ms\n",
+                                  static_cast<unsigned long>(agg.window_id),
+                                  agg.mean,
+                                  agg.duration_ms);
+            } else {
+                Serial.println("Failed to send aggregate value to edge.");
+            }
         }
     }
 }
 
-// =========================
-// Setup / Loop
-// =========================
+// ===== Setup / Loop =====
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -363,10 +336,10 @@ void setup() {
     analogSetAttenuation(ADC_11db);
     pinMode(ADC_PIN, INPUT);
 
-    Serial.println("Signal Processing FFT boot");
+    Serial.println("Signal Processing boot");
     Serial.printf("ADC pin: GPIO%d\n", ADC_PIN);
-    Serial.printf("Samples: %u\n", SAMPLES);
     Serial.printf("Initial target fs: %.2f Hz\n", 1000000.0f / static_cast<float>(INITIAL_SAMPLE_PERIOD_US));
+    Serial.printf("Aggregation window: %lu ms\n", static_cast<unsigned long>(AGGREGATION_WINDOW_MS));
 
     if (!createQueues()) {
         Serial.println("Queue creation failed.");
@@ -414,7 +387,7 @@ void setup() {
     xTaskCreatePinnedToCore(
         TaskCommunication,
         "TaskComm",
-        4096,
+        6114,
         nullptr,
         1,
         nullptr,
