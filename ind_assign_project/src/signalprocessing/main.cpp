@@ -3,6 +3,7 @@
 #include <math.h>
 #include "comm_edge.hpp"
 #include "utils.hpp"
+#include "comm_cloud.hpp"
 
 // Configuration
 constexpr int ADC_PIN = 1; // Heltec v3 ADC pin
@@ -304,16 +305,21 @@ void TaskAggregateValue(void* pvParameters) {
             sample_count = 0;
             window_start_us = 0;
         }
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
 // Task for handling communication with the edge server and cloud
 void TaskCommunication(void* pvParameters) {
     edge_comm_init();
+    cloud_comm_init();
     for (;;) {
         edge_comm_loop();
+        cloud_comm_loop();
+
         AggregatedValue agg{};
         if (xQueueReceive(communicationQueue, &agg, portMAX_DELAY) == pdTRUE) {
+            // Send to edge server
             bool edge_sent = edge_comm_send(agg);
             if(edge_sent) { Serial.printf("Sent aggregate value to edge: window_id=%lu, mean=%.3f, duration=%.1f ms\n",
                                   static_cast<unsigned long>(agg.window_id),
@@ -322,7 +328,20 @@ void TaskCommunication(void* pvParameters) {
             } else {
                 Serial.println("Failed to send aggregate value to edge.");
             }
+
+            // Send to cloud
+            if(cloud_comm_is_ready()) {
+                bool cloud_sent = cloud_comm_send(agg);
+                if(cloud_sent) { Serial.printf("Sent aggregate value to cloud");
+                } else {
+                    Serial.println("Failed to send aggregate value to cloud.");
+                }
+            } else {
+                Serial.println("Cloud communication not ready, skipping sending aggregate value to cloud.");
+            }
+
         }
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 

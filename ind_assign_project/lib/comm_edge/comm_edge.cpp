@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-// Configuration
+// namespace for internal linkage of helper functions and state
 namespace {
     constexpr uint16_t MQTT_PORT     = 1883;
 
@@ -14,6 +14,7 @@ namespace {
     WiFiClient wifiClient;
     PubSubClient mqttClient(wifiClient);
 
+    // Helper function to ensure WiFi connection
     bool ensure_wifi_connected(uint32_t timeout_ms = 10000) {
         if (WiFi.status() == WL_CONNECTED) {
             return true;
@@ -31,6 +32,7 @@ namespace {
         return WiFi.status() == WL_CONNECTED;
     }
 
+    // Helper function to ensure MQTT connection
     bool ensure_mqtt_connected(uint32_t timeout_ms = 5000) {
         if (mqttClient.connected()) {
             return true;
@@ -53,6 +55,7 @@ namespace {
         return mqttClient.connected();
     }
 
+    // Helper function to build JSON payload from AggregatedValue
     bool build_payload(const AggregatedValue& agg, char* out, size_t out_size) {
         if (!out || out_size == 0) {
             return false;
@@ -71,13 +74,14 @@ namespace {
 
         return (written > 0 && static_cast<size_t>(written) < out_size);
     }
-} // namespace
+}
 
 
 // Public API
 void edge_comm_init() {
     WiFi.mode(WIFI_STA);
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+    Serial.println("[EDGE] MQTT client initialized");
 }
 
 void edge_comm_loop() {
