@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-#include "utils.hpp"
+#include "../../include/common.hpp"
 
 // Initialize WiFi and MQTT connections
 void edge_comm_init();

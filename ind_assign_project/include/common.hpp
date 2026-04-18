@@ -3,11 +3,9 @@
 #include <Arduino.h>
 #include <stddef.h>
 #include <stdint.h>
-
-// Data structures
+#include "config.hpp"
 
 using FFTValue = float;
-constexpr uint16_t SAMPLES = 16384;                  // must be power of 2 (needed for FFT processing)
 
 // Represent a sampling window to be processed by the FFT task
 struct FFTSampleWindow {

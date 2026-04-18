@@ -15,17 +15,17 @@ struct SineComponent {
 
 // Somma di seni: aggiungi/rimuovi righe per cambiare il segnale generato.
 // Mantieni la somma delle ampiezze abbastanza sotto 127 per evitare clipping.
+// cap frequenze 7000-8000 Hz
 constexpr SineComponent SIGNAL_COMPONENTS[] = {
     {3.0f, 50.0f, 0.0f},
-    {13.0f, 20.0f, 0.0f},
+    {14.0f, 20.0f, 0.0f},
     {30.0f, 2.0f, 0.0f},
 };
 
 constexpr size_t COMPONENT_COUNT = sizeof(SIGNAL_COMPONENTS) / sizeof(SIGNAL_COMPONENTS[0]);
 
 // Intervallo di aggiornamento DAC
-// 1 ms => circa 1000 update/s, sufficiente per partire
-constexpr uint32_t UPDATE_PERIOD_US = 1000;
+constexpr uint32_t UPDATE_PERIOD_US = 61;
 
 uint64_t t_start_us = 0;
 uint64_t last_update_us = 0;

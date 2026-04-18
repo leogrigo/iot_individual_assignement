@@ -1,6 +1,6 @@
 #pragma once
 
-#include "utils.hpp"
+#include "../../include/common.hpp"
 
 // Initialize LoRaWAN stack and radio
 void cloud_comm_init();
