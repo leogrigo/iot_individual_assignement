@@ -3,6 +3,7 @@
 
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <esp_wifi.h>
 
 // namespace for internal linkage of helper functions and state
 namespace {
@@ -14,6 +15,14 @@ namespace {
     WiFiClient wifiClient;
     PubSubClient mqttClient(wifiClient);
 
+    void configure_wifi_modem_sleep() {
+        WiFi.setSleep(true);
+        const esp_err_t err = esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+        if (err != ESP_OK) {
+            Serial.printf("[EDGE] Failed to enable WiFi modem sleep, err=%d\n", err);
+        }
+    }
+
     // Helper function to ensure WiFi connection
     bool ensure_wifi_connected(uint32_t timeout_ms = 10000) {
         if (WiFi.status() == WL_CONNECTED) {
@@ -22,6 +31,7 @@ namespace {
 
         WiFi.disconnect(false, false);
         WiFi.mode(WIFI_STA);
+        configure_wifi_modem_sleep();
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
         const uint32_t start_ms = millis();
@@ -80,6 +90,7 @@ namespace {
 // Public API
 void edge_comm_init() {
     WiFi.mode(WIFI_STA);
+    configure_wifi_modem_sleep();
     mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
     Serial.println("[EDGE] MQTT client initialized");
 }
@@ -120,6 +131,8 @@ bool edge_comm_send(const AggregatedValue& agg) {
     if (!ok) {
         Serial.print("[EDGE] Publish failed, state=");
         Serial.println(mqttClient.state());
+    } else {
+        Serial.printf("[EDGE] Published to MQTT: %s\n", payload);
     }
 
     return ok;

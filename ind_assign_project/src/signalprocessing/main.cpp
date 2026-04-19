@@ -7,6 +7,8 @@
 #include "fft_processing.hpp"
 #include "sampling.hpp"
 
+#include <esp_pm.h>
+
 // Queues
 QueueHandle_t fftReadyQueue = nullptr;       // contains FFTSampleWindow*
 QueueHandle_t fftFreeQueue = nullptr;        // contains FFTSampleWindow*
@@ -15,7 +17,7 @@ QueueHandle_t communicationQueue = nullptr;  // contains AggregatedValue
 
 // Global variables
 volatile uint32_t sample_period_us_global = INITIAL_SAMPLE_PERIOD_US;
-volatile bool fft_collection_enabled_global = true;
+volatile bool adaptive_sampling_applied_global = !ADAPTIVE_SAMPLING_FREQUENCY_ENABLED;
 static FFTSampleWindow fftBuffers[FFT_BUFFER_COUNT]; // Pre-allocated buffers for FFT processing, managed via queues
 
 // ===== Helpers =====
@@ -29,6 +31,27 @@ static bool createQueues() {
             fftFreeQueue  != nullptr &&
             sampleQueue   != nullptr &&
             communicationQueue != nullptr);
+}
+
+static void configureAutoLightSleep() {
+    esp_pm_config_esp32s3_t pmConfig;
+    pmConfig.max_freq_mhz = static_cast<int>(getCpuFrequencyMhz());
+    pmConfig.min_freq_mhz = 80;
+    pmConfig.light_sleep_enable = true;
+
+    const esp_err_t err = esp_pm_configure(&pmConfig);
+    if (err == ESP_OK) {
+        Serial.printf("[PM] Auto light sleep enabled, CPU %d-%d MHz\n",
+                      pmConfig.min_freq_mhz,
+                      pmConfig.max_freq_mhz);
+    } else if (err == ESP_ERR_NOT_SUPPORTED) {
+        Serial.println("[PM] Auto light sleep not supported by this Arduino core build.");
+        Serial.println("[PM] CONFIG_PM_ENABLE must be enabled in the ESP-IDF sdkconfig.");
+    } else {
+        Serial.printf("[PM] Auto light sleep configuration failed: %s (%d)\n",
+                      esp_err_to_name(err),
+                      err);
+    }
 }
 
 static FFTSampleWindow* receiveFFTWindow() {
@@ -58,7 +81,7 @@ static bool receiveAggregatedValueForCommunication(AggregatedValue& agg) {
 static void sendAggregatedValue(const AggregatedValue& agg) {
     edge_comm_send(agg);
     if (!cloud_comm_is_ready()) {
-        Serial.println("[COMM] Cloud communication not ready, skipping sending aggregate value to cloud.");
+        Serial.println("[CLOUD] Cloud communication not ready, skipping sending aggregate value to cloud.");
         return;
     }
     cloud_comm_send(agg);
@@ -81,7 +104,7 @@ void TaskSample(void* pvParameters) {
 
         publishSampleForAggregation(sampleQueue, sampleValue, sample_timestamp_us);
 
-        if (fft_collection_enabled_global &&
+        if (!adaptive_sampling_applied_global &&
             addSampleToFFTWindow(state, sampleValue, sample_timestamp_us)) {
             publishFFTWindow(fftReadyQueue, state, sample_timestamp_us, local_period_us);
             acquireNextFFTBuffer(state, fftFreeQueue);
@@ -93,7 +116,6 @@ void TaskSample(void* pvParameters) {
 void TaskFFT(void* pvParameters) {
     float fsAdaptedSum = 0.0f;
     uint32_t adaptiveRoundsCompleted = 0;
-    bool adaptiveSamplingApplied = !ADAPTIVE_SAMPLING_FREQUENCY_ENABLED;
 
     for (;;) {
         FFTSampleWindow* window = receiveFFTWindow();
@@ -103,7 +125,7 @@ void TaskFFT(void* pvParameters) {
 
         bool stopFFTAfterRelease = false;
 
-        if (ADAPTIVE_SAMPLING_FREQUENCY_ENABLED && !adaptiveSamplingApplied) {
+        if (ADAPTIVE_SAMPLING_FREQUENCY_ENABLED && !adaptive_sampling_applied_global) {
             fsAdaptedSum += result.fsAdapted;
             adaptiveRoundsCompleted++;
 
@@ -117,7 +139,7 @@ void TaskFFT(void* pvParameters) {
                 }
 
                 sample_period_us_global = adaptedPeriodUs;
-                adaptiveSamplingApplied = true;
+                adaptive_sampling_applied_global = true;
                 stopFFTAfterRelease = true;
 
                 Serial.println("[FFT] Official adapted sampling frequency calculated.");
@@ -132,7 +154,6 @@ void TaskFFT(void* pvParameters) {
         releaseFFTWindow(window);
 
         if (stopFFTAfterRelease) {
-            fft_collection_enabled_global = false;
             vTaskSuspend(nullptr);
         }
     }
@@ -154,8 +175,6 @@ void TaskAggregateValue(void* pvParameters) {
             publishAggregatedValue(agg);
             resetAggregationWindow(state);
         }
-
-        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
@@ -195,7 +214,8 @@ void setup() {
                   ADAPTIVE_SAMPLING_FREQUENCY_ENABLED ? "ON" : "OFF");
     Serial.printf("Adaptive sampling rounds: %lu\n",
                   static_cast<unsigned long>(ADAPTIVE_SAMPLING_ROUNDS));
-    Serial.println("FFT processing: adaptive startup only");
+
+    // configureAutoLightSleep();
 
     if (!createQueues()) {
         Serial.println("Queue creation failed.");
@@ -211,16 +231,6 @@ void setup() {
         FFTSampleWindow* ptr = &fftBuffers[i];
         xQueueSend(fftFreeQueue, &ptr, portMAX_DELAY);
     }
-
-    xTaskCreatePinnedToCore(
-        TaskSample,
-        "TaskSample",
-        8192,
-        nullptr,
-        3,
-        nullptr,
-        1
-    );
 
     xTaskCreatePinnedToCore(
         TaskFFT,
@@ -253,6 +263,16 @@ void setup() {
     );
 
     Serial.println("===================================");
+
+    xTaskCreatePinnedToCore(
+        TaskSample,
+        "TaskSample",
+        8192,
+        nullptr,
+        3,
+        nullptr,
+        1
+    );
 
 }
 

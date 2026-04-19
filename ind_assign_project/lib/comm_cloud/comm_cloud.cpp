@@ -141,13 +141,13 @@ void cloud_comm_loop() {
             deviceState = DEVICE_STATE_CYCLE;
             break;
 
-        case DEVICE_STATE_CYCLE:
+        case DEVICE_STATE_CYCLE: // After sending, wait for the duty cycle time before sleeping
             txDutyCycleTime = appTxDutyCycle;
             LoRaWAN.cycle(txDutyCycleTime);
             deviceState = DEVICE_STATE_SLEEP;
             break;
 
-        case DEVICE_STATE_SLEEP:
+        case DEVICE_STATE_SLEEP: // Sleep until the next cycle
             LoRaWAN.sleep(loraWanClass);
             queue_send_if_possible();
             break;

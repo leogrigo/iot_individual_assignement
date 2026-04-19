@@ -12,11 +12,29 @@ void initSamplingState(SamplingState& state, QueueHandle_t fftFreeQueue) {
 }
 
 void waitNextSample(SamplingState& state, uint32_t periodUs) {
-    while ((micros() - state.lastSampleUs) < periodUs) {
-        // busy wait for regular cadence
+    const uint64_t targetUs = state.lastSampleUs + periodUs;
+    const uint32_t tickUs = 1000000UL / static_cast<uint32_t>(configTICK_RATE_HZ);
+
+    for (;;) {
+        const uint64_t nowUs = micros();
+        if (nowUs >= targetUs) {
+            break;
+        }
+
+        const uint64_t remainingUs = targetUs - nowUs;
+        if (remainingUs <= SAMPLING_BUSY_WAIT_MARGIN_US + (2U * tickUs)) {
+            // if time remaining is less than margin + 2 ticks, do a busy wait until targetUs for better precision
+            continue;
+        }
+        TickType_t delayTicks =
+            static_cast<TickType_t>((remainingUs - SAMPLING_BUSY_WAIT_MARGIN_US) / tickUs);
+        // if (delayTicks > 1) {
+        //     delayTicks--;
+        // }
+        vTaskDelay(delayTicks);
     }
 
-    state.lastSampleUs += periodUs;
+    state.lastSampleUs = targetUs;
 }
 
 FFTValue readADCSample() {
