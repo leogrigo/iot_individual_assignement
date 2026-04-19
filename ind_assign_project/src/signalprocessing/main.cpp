@@ -71,6 +71,10 @@ static Sample receiveAggregationSample() {
 }
 
 static void publishAggregatedValue(const AggregatedValue& agg) {
+    if (LIGHT_SLEEP_TEST_MODE_ENABLED) {
+        return;
+    }
+
     xQueueSend(communicationQueue, &agg, portMAX_DELAY);
 }
 
@@ -214,6 +218,8 @@ void setup() {
                   ADAPTIVE_SAMPLING_FREQUENCY_ENABLED ? "ON" : "OFF");
     Serial.printf("Adaptive sampling rounds: %lu\n",
                   static_cast<unsigned long>(ADAPTIVE_SAMPLING_ROUNDS));
+    Serial.printf("Light sleep test mode: %s\n",
+                  LIGHT_SLEEP_TEST_MODE_ENABLED ? "ON" : "OFF");
 
     // configureAutoLightSleep();
 
@@ -252,15 +258,17 @@ void setup() {
         0
     );
 
-    xTaskCreatePinnedToCore(
-        TaskCommunication,
-        "TaskComm",
-        6114,
-        nullptr,
-        1,
-        nullptr,
-        0
-    );
+    if (!LIGHT_SLEEP_TEST_MODE_ENABLED) {
+        xTaskCreatePinnedToCore(
+            TaskCommunication,
+            "TaskComm",
+            6114,
+            nullptr,
+            1,
+            nullptr,
+            0
+        );
+    }
 
     Serial.println("===================================");
 

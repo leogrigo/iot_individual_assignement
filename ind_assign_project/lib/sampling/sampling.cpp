@@ -2,6 +2,8 @@
 
 #include "../../include/config.hpp"
 
+#include <esp_sleep.h>
+
 void acquireNextFFTBuffer(SamplingState& state, QueueHandle_t fftFreeQueue) {
     xQueueReceive(fftFreeQueue, &state.fillBuffer, portMAX_DELAY);
 }
@@ -22,15 +24,24 @@ void waitNextSample(SamplingState& state, uint32_t periodUs) {
         }
 
         const uint64_t remainingUs = targetUs - nowUs;
+
+        if (LIGHT_SLEEP_TEST_MODE_ENABLED &&
+            remainingUs > LIGHT_SLEEP_MEASURED_OVERHEAD_US + SAMPLING_BUSY_WAIT_MARGIN_US) {
+            const uint64_t sleepUs =
+                remainingUs - LIGHT_SLEEP_MEASURED_OVERHEAD_US - SAMPLING_BUSY_WAIT_MARGIN_US;
+
+            if (esp_sleep_enable_timer_wakeup(sleepUs) == ESP_OK &&
+                esp_light_sleep_start() == ESP_OK) {
+                continue;
+            }
+        }
+
         if (remainingUs <= SAMPLING_BUSY_WAIT_MARGIN_US + (2U * tickUs)) {
             // if time remaining is less than margin + 2 ticks, do a busy wait until targetUs for better precision
             continue;
         }
         TickType_t delayTicks =
             static_cast<TickType_t>((remainingUs - SAMPLING_BUSY_WAIT_MARGIN_US) / tickUs);
-        // if (delayTicks > 1) {
-        //     delayTicks--;
-        // }
         vTaskDelay(delayTicks);
     }
 
