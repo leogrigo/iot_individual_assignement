@@ -170,13 +170,19 @@ void TaskAggregateValue(void* pvParameters) {
     for (;;) {
         const Sample sample = receiveAggregationSample();
 
+        const uint64_t t0 = micros();
         updateAggregationWindow(state, sample);
-
         const float elapsedMs = getAggregationElapsedMs(state, sample);
+        const uint64_t t1 = micros();
+        state.processingOverheadUs += (t1 - t0);
 
         if (isAggregationWindowReady(state, elapsedMs)) {
+            const uint64_t t2 = micros();
             const AggregatedValue agg = buildAggregatedValue(state, elapsedMs);
             publishAggregatedValue(agg);
+            const uint64_t t3 = micros();
+            state.processingOverheadUs += (t3 - t2);
+            logWindowProcessingMetric(agg, state.processingOverheadUs);
             resetAggregationWindow(state);
         }
     }

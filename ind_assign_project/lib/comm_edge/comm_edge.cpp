@@ -75,11 +75,12 @@ namespace {
         const int written = snprintf(
             out,
             out_size,
-            "{\"node_id\":\"%s\",\"window_id\":%lu,\"aggregate\":%.3f,\"duration_ms\":%.1f}",
+            "{\"node_id\":\"%s\",\"window_id\":%lu,\"aggregate\":%.3f,\"duration_ms\":%.1f,\"sample_count\":%lu}",
             MQTT_CLIENT_ID,
             static_cast<unsigned long>(agg.window_id),
             agg.mean,
-            agg.duration_ms
+            agg.duration_ms,
+            static_cast<unsigned long>(agg.sample_count)
         );
 
         return (written > 0 && static_cast<size_t>(written) < out_size);

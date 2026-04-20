@@ -7,10 +7,12 @@ struct AggregationState {
     uint32_t sampleCount = 0;
     uint64_t windowStartUs = 0;
     uint32_t windowId = 0;
+    uint64_t processingOverheadUs = 0;
 };
 
 void updateAggregationWindow(AggregationState& state, const Sample& sample);
 float getAggregationElapsedMs(const AggregationState& state, const Sample& sample);
 bool isAggregationWindowReady(const AggregationState& state, float elapsedMs);
 AggregatedValue buildAggregatedValue(const AggregationState& state, float elapsedMs);
+void logWindowProcessingMetric(const AggregatedValue& agg, uint32_t processingTimeUs);
 void resetAggregationWindow(AggregationState& state);
