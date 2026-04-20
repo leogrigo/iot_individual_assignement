@@ -84,6 +84,20 @@ static bool receiveAggregatedValueForCommunication(AggregatedValue& agg) {
 
 static void sendAggregatedValue(const AggregatedValue& agg) {
     edge_comm_send(agg);
+    const uint32_t send_end_us = micros();
+
+    const uint32_t first_to_send_done_us = send_end_us - agg.window_start_us;
+    const uint32_t agg_to_send_done_us = send_end_us - agg.aggregate_ready_us;
+
+    const uint32_t estimated_e2e_us =
+        first_to_send_done_us + (EDGE_RTT_FIXED_US / 2U);
+    const uint32_t estimated_agg_e2e_us = agg_to_send_done_us;
+    Serial.printf("[METRIC][E2E] id=%u duration_ms=%.2f estimated_e2e_us=%lu estimated_agg_e2e_us=%lu\n",
+                  agg.window_id,
+                  agg.duration_ms,
+                  static_cast<unsigned long>(estimated_e2e_us),
+                  static_cast<unsigned long>(estimated_agg_e2e_us));
+
     if (!cloud_comm_is_ready()) {
         Serial.println("[CLOUD] Cloud communication not ready, skipping sending aggregate value to cloud.");
         return;

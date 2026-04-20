@@ -128,6 +128,7 @@ bool edge_comm_send(const AggregatedValue& agg) {
         return false;
     }
 
+    Serial.printf("[METRIC][VDT] payload_size=%lu\n", sizeof(payload));
     bool ok = mqttClient.publish(MQTT_TOPIC_EDGE, payload);
     if (!ok) {
         Serial.print("[EDGE] Publish failed, state=");

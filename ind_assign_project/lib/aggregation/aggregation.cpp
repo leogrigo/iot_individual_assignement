@@ -24,6 +24,8 @@ AggregatedValue buildAggregatedValue(const AggregationState& state, float elapse
     agg.mean = state.sum / static_cast<float>(state.sampleCount);
     agg.duration_ms = elapsedMs;
     agg.sample_count = state.sampleCount;
+    agg.window_start_us = state.windowStartUs;
+    agg.aggregate_ready_us = micros();
 
     Serial.printf("[AV] Ready: window_id=%u, mean=%.2f, duration=%.2f ms, samples=%lu\n",
                   agg.window_id,

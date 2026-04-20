@@ -22,6 +22,8 @@ struct AggregatedValue {
     float mean;
     float duration_ms;
     uint32_t sample_count;
+    uint32_t window_start_us;
+    uint32_t aggregate_ready_us;
 };
 
 // Represent a single sample to be aggregated
