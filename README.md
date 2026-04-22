@@ -38,6 +38,8 @@ System flow:
 - 1x nearby machine running a Mosquitto MQTT broker
 - LoRaWAN coverage and a TTN application/device configured for the Heltec board
 
+![Schema](docs/schema.png)
+
 ### Software
 
 - [PlatformIO](https://platformio.org/) for build, upload, and serial monitor
