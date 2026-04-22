@@ -8,6 +8,7 @@
 #include "sampling.hpp"
 
 #include <esp_pm.h>
+#include <esp_task_wdt.h>
 
 // Queues
 QueueHandle_t fftReadyQueue = nullptr;       // contains FFTSampleWindow*
@@ -19,6 +20,7 @@ QueueHandle_t communicationQueue = nullptr;  // contains AggregatedValue
 volatile uint32_t sample_period_us_global = INITIAL_SAMPLE_PERIOD_US;
 volatile bool adaptive_sampling_applied_global = !ADAPTIVE_SAMPLING_FREQUENCY_ENABLED;
 static FFTSampleWindow fftBuffers[FFT_BUFFER_COUNT]; // Pre-allocated buffers for FFT processing, managed via queues
+static volatile bool g_sampling_start_enabled = false;
 
 // ===== Helpers =====
 static bool createQueues() {
@@ -79,7 +81,7 @@ static void publishAggregatedValue(const AggregatedValue& agg) {
 }
 
 static bool receiveAggregatedValueForCommunication(AggregatedValue& agg) {
-    return xQueueReceive(communicationQueue, &agg, pdMS_TO_TICKS(50)) == pdTRUE;
+    return xQueueReceive(communicationQueue, &agg, 0) == pdTRUE;
 }
 
 static void sendAggregatedValue(const AggregatedValue& agg) {
@@ -98,11 +100,9 @@ static void sendAggregatedValue(const AggregatedValue& agg) {
                   static_cast<unsigned long>(estimated_e2e_us),
                   static_cast<unsigned long>(estimated_agg_e2e_us));
 
-    if (!cloud_comm_is_ready()) {
-        Serial.println("[CLOUD] Cloud communication not ready, skipping sending aggregate value to cloud.");
-        return;
+    if (!cloud_comm_send(agg)) {
+        Serial.println("[CLOUD] Unable to queue aggregate value for cloud transmission.");
     }
-    cloud_comm_send(agg);
 }
 
 // ===== Tasks =====
@@ -111,6 +111,10 @@ static void sendAggregatedValue(const AggregatedValue& agg) {
 void TaskSample(void* pvParameters) {
     SamplingState state;
     initSamplingState(state, fftFreeQueue);
+
+    while (!g_sampling_start_enabled) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 
     for (;;) {
         const uint32_t local_period_us = sample_period_us_global;
@@ -204,18 +208,37 @@ void TaskAggregateValue(void* pvParameters) {
 
 // Task for handling communication with the edge server and cloud
 void TaskCommunication(void* pvParameters) {
+    esp_task_wdt_delete(nullptr);
+
     edge_comm_init();
     cloud_comm_init();
-    vTaskDelay(pdMS_TO_TICKS(3000));
+    const TickType_t joinGraceDeadline =
+        xTaskGetTickCount() + pdMS_TO_TICKS(LORAWAN_JOIN_GRACE_PERIOD_MS);
+
+    Serial.printf("[CLOUD] Join grace period active for %lu ms before starting DSP tasks.\n",
+                  static_cast<unsigned long>(LORAWAN_JOIN_GRACE_PERIOD_MS));
 
     for (;;) {
         edge_comm_loop();
         cloud_comm_loop();
 
+        if (!g_sampling_start_enabled) {
+            if (cloud_comm_is_ready()) {
+                g_sampling_start_enabled = true;
+                Serial.println("[CLOUD] Join completed during grace period, starting DSP tasks.");
+            } else if (xTaskGetTickCount() >= joinGraceDeadline) {
+                g_sampling_start_enabled = true;
+                Serial.println("[CLOUD] Join grace period expired, starting DSP tasks anyway.");
+            }
+        }
+
         AggregatedValue agg{};
         if (receiveAggregatedValueForCommunication(agg)) {
             sendAggregatedValue(agg);
         }
+
+        // Keep the LoRaWAN state machine responsive so RX windows are serviced promptly.
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
@@ -264,7 +287,7 @@ void setup() {
             "TaskFFT",
             12288,
             nullptr,
-            2,
+            1,
             nullptr,
             0
         );
@@ -286,7 +309,7 @@ void setup() {
             "TaskComm",
             6114,
             nullptr,
-            1,
+            3,
             nullptr,
             0
         );

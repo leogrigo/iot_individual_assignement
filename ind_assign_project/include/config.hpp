@@ -10,6 +10,7 @@ constexpr uint32_t ADAPTIVE_SAMPLING_ROUNDS = 25; // FFT windows averaged before
 static_assert(ADAPTIVE_SAMPLING_ROUNDS > 0, "ADAPTIVE_SAMPLING_ROUNDS must be greater than 0");
 constexpr bool LIGHT_SLEEP_TEST_MODE_ENABLED = false; // Enables manual light sleep benchmarking and disables communication
 constexpr bool FFT_DEBUG_VERBOSE = false; // Enables detailed FFT bin-by-bin debug output
+constexpr uint32_t LORAWAN_JOIN_GRACE_PERIOD_MS = 20000; // Delay heavy DSP tasks during boot to give LoRaWAN time to join
 
 // Hardware configuration
 constexpr int ADC_PIN = 2; // Heltec v3 ADC pin

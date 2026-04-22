@@ -49,6 +49,7 @@ System flow:
 - `signalgenerator`: firmware for the ESP32 signal generator
 - `signalprocessing`: adaptive processing firmware for the Heltec board
 - `signalprocessing_maxrate`: benchmark firmware used to identify the maximum ADC sampling rate of the processing board
+- `energy_consumption`: firmware for the ESP32 connected to the INA219 sensor during the energy measurement experiment
 
 ## Configuration and How to Run
 
@@ -108,6 +109,14 @@ pio run -e signalprocessing_maxrate -t upload
 pio device monitor -e signalprocessing_maxrate
 ```
 
+### Flash the energy measurement node
+
+```powershell
+cd ind_assign_project
+pio run -e energy_consumption -t upload
+pio device monitor -e energy_consumption
+```
+
 ### Start the MQTT broker
 
 From the `ind_assign_project` folder, a local Mosquitto instance can be started with:
@@ -127,9 +136,10 @@ mosquitto_sub -h <broker-ip> -t iot/node01/aggregate -v
 Before running the cloud path:
 
 1. Create a TTN application and device.
-2. Copy `JoinEUI`, `DevEUI`, and `AppKey` into `secrets.hpp`.
-3. Ensure the device uses the EU868 region, matching the `platformio.ini` configuration.
-4. Open the TTN Live Data view to verify uplinks.
+2. Copy `JoinEUI`, `DevEUI`, and `AppKey` from TTN into `secrets.hpp` exactly as shown in the TTN console.
+3. The firmware reverses `JoinEUI` and `DevEUI` internally to match the byte order expected by the Heltec LoRaWAN library. Do not reverse them manually in `secrets.hpp`.
+4. Ensure the device uses the EU868 region, matching the `platformio.ini` configuration.
+5. Open the TTN Live Data view to verify uplinks.
 
 ## Requirements Implementation
 
@@ -324,7 +334,9 @@ Send the same aggregate value to the cloud through LoRaWAN and TTN.
 
 **Implementation**
 
-The cloud communication module is implemented in [`ind_assign_project/lib/comm_cloud/comm_cloud.cpp`](./ind_assign_project/lib/comm_cloud/comm_cloud.cpp). The node uses OTAA activation with TTN credentials stored in `secrets.hpp`, then queues one compact binary uplink payload per aggregate.
+The cloud communication module is implemented in [`ind_assign_project/lib/comm_cloud/comm_cloud.cpp`](./ind_assign_project/lib/comm_cloud/comm_cloud.cpp). The node uses OTAA activation with TTN credentials stored in `secrets.hpp`. `JoinEUI` and `DevEUI` are copied from TTN exactly as shown in the console; the firmware converts them internally to the byte order expected by the Heltec LoRaWAN stack before starting the join procedure.
+
+Each aggregation window produces one compact binary payload. The aggregation window is `5 s`, while the LoRaWAN application duty cycle is configured to `15000 ms`. As a consequence, the node does not transmit every aggregate to TTN: if multiple aggregates are produced before the next LoRaWAN uplink slot is available, the firmware keeps the most recent pending aggregate and transmits that one at the next allowed uplink.
 
 Payload format:
 
@@ -337,9 +349,7 @@ The node transmits on LoRaWAN application port `1` and uses the `EU868` region.
 
 **Result**
 
-```text
-real output
-```
+![LoraWAN](docs/lorawan.png)
 
 ## 7. Performance Evaluation
 

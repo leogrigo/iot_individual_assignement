@@ -17,6 +17,16 @@ namespace {
 
     bool g_initialized = false; // flag to track initialization status
     bool g_payload_pending = false; // flag to track if there's a payload waiting to be sent
+    bool g_last_joined_state = false;
+
+    // Heltec's LoRaWAN stack serializes OTAA EUIs with an internal byte-reverse.
+    // TTN shows JoinEUI/DevEUI in big-endian, so we normalize them here.
+    template <size_t N>
+    void reverse_copy(uint8_t (&dst)[N], const uint8_t (&src)[N]) {
+        for (size_t i = 0; i < N; ++i) {
+            dst[i] = src[N - 1 - i];
+        }
+    }
 
     // Helper function to build payload from AggregatedValue
     bool build_payload(const AggregatedValue& agg, uint8_t* out, uint8_t& out_len) {
@@ -40,20 +50,16 @@ namespace {
         return IsLoRaMacNetworkJoined;
     }
 
-    // Helper function to queue a send operation if possible
     void queue_send_if_possible() {
         if (!g_payload_pending) {
-            // No payload to send
             return;
         }
 
         if (!joined_state_reached()) {
-            // Not joined yet
             return;
         }
 
         if (deviceState == DEVICE_STATE_SLEEP || deviceState == DEVICE_STATE_CYCLE) {
-            // Transition to SEND state to trigger sending in the next loop iteration
             deviceState = DEVICE_STATE_SEND;
         }
     }
@@ -97,8 +103,8 @@ void cloud_comm_init() {
     }
 
     // Copy OTAA keys from secrets
-    std::memcpy(appEui, TTN_JOIN_EUI, sizeof(appEui));
-    std::memcpy(devEui, TTN_DEV_EUI, sizeof(devEui));
+    reverse_copy(appEui, TTN_JOIN_EUI);
+    reverse_copy(devEui, TTN_DEV_EUI);
     std::memcpy(appKey, TTN_APP_KEY, sizeof(appKey));
 
     // Init radio/SPI
@@ -112,6 +118,14 @@ void cloud_comm_init() {
 void cloud_comm_loop() {
     if (!g_initialized) {
         return;
+    }
+
+    const bool joined = joined_state_reached();
+    if (joined != g_last_joined_state) {
+        Serial.printf("[CLOUD] Join state changed: joined=%s, deviceState=%d\n",
+                      joined ? "true" : "false",
+                      static_cast<int>(deviceState));
+        g_last_joined_state = joined;
     }
 
     switch (deviceState) {
@@ -134,16 +148,20 @@ void cloud_comm_loop() {
                 Serial.print("[CLOUD] DEVICE_STATE_SEND: Sending uplink, bytes=");
                 Serial.println(appDataSize);
 
-                LoRaWAN.send();
-                g_payload_pending = false;
+                const bool mac_busy = SendFrame();
+                if (!mac_busy) {
+                    g_payload_pending = false;
+                    txDutyCycleTime = appTxDutyCycle;
+                    LoRaWAN.cycle(txDutyCycleTime);
+                } else {
+                    Serial.println("[CLOUD] LoRaMAC not ready yet, keeping payload queued.");
+                }
             }
 
-            deviceState = DEVICE_STATE_CYCLE;
+            deviceState = DEVICE_STATE_SLEEP;
             break;
 
         case DEVICE_STATE_CYCLE: // After sending, wait for the duty cycle time before sleeping
-            txDutyCycleTime = appTxDutyCycle;
-            LoRaWAN.cycle(txDutyCycleTime);
             deviceState = DEVICE_STATE_SLEEP;
             break;
 
@@ -169,8 +187,8 @@ bool cloud_comm_send(const AggregatedValue& agg) {
     }
 
     if (g_payload_pending) {
-        Serial.println("[CLOUD] Previous payload still pending");
-        return false;
+        // Keep the freshest aggregate when LoRaWAN duty cycle is slower than the DSP window.
+        Serial.println("[CLOUD] Replacing pending payload with newer aggregate");
     }
 
     if (!build_payload(agg, g_payload, g_payload_len)) {
@@ -179,7 +197,6 @@ bool cloud_comm_send(const AggregatedValue& agg) {
     }
 
     g_payload_pending = true;
-    queue_send_if_possible();
 
     Serial.print("[CLOUD] Payload queued, bytes=");
     Serial.println(g_payload_len);
