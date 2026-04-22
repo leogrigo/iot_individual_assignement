@@ -36,7 +36,7 @@ AggregatedValue buildAggregatedValue(const AggregationState& state, float elapse
 }
 
 void logWindowProcessingMetric(const AggregatedValue& agg, uint32_t processingTimeUs) {
-    Serial.printf("[METRIC][W.E.T.] id=%u samples=%lu duration_ms=%.2f processing_us=%lu\n",
+    Serial.printf("[METRIC][WET] id=%u samples=%lu duration_ms=%.2f processing_us=%lu\n",
                   agg.window_id,
                   static_cast<unsigned long>(agg.sample_count),
                   agg.duration_ms,

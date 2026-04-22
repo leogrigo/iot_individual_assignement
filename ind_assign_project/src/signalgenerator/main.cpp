@@ -3,8 +3,8 @@
 
 constexpr int DAC_PIN = 25;
 
-// Parametri segnale
-constexpr float DAC_OFFSET = 127.0f;        // centro circa a metà scala
+// Signal parameters
+constexpr float DAC_OFFSET = 127.0f;        // center approximately at mid-scale
 constexpr float TWO_PI_F   = 6.28318530718f;
 
 struct SineComponent {
@@ -13,9 +13,8 @@ struct SineComponent {
     float phase_rad;
 };
 
-// Somma di seni: aggiungi/rimuovi righe per cambiare il segnale generato.
-// Mantieni la somma delle ampiezze abbastanza sotto 127 per evitare clipping.
-// cap frequenze 7000-8000 Hz
+// Keep the sum of amplitudes comfortably below 127 to avoid clipping.
+// Frequency cap: 7000-8000 Hz (reader side)
 constexpr SineComponent SIGNAL_COMPONENTS[] = {
     {3.0f, 50.0f, 0.0f},
     {14.0f, 20.0f, 0.0f},
@@ -24,7 +23,7 @@ constexpr SineComponent SIGNAL_COMPONENTS[] = {
 
 constexpr size_t COMPONENT_COUNT = sizeof(SIGNAL_COMPONENTS) / sizeof(SIGNAL_COMPONENTS[0]);
 
-// Intervallo di aggiornamento DAC
+// DAC update interval
 constexpr uint32_t UPDATE_PERIOD_US = 61;
 
 uint64_t t_start_us = 0;

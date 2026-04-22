@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-constexpr int ADC_PIN = 1;
+constexpr int ADC_PIN = 2;
 constexpr uint32_t TEST_DURATION_MS = 1000;
 constexpr uint32_t NUM_RUNS = 15;
 

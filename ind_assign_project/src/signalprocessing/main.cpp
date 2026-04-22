@@ -91,7 +91,7 @@ static void sendAggregatedValue(const AggregatedValue& agg) {
 
     const uint32_t estimated_e2e_us =
         first_to_send_done_us + (EDGE_RTT_FIXED_US / 2U);
-    const uint32_t estimated_agg_e2e_us = agg_to_send_done_us;
+    const uint32_t estimated_agg_e2e_us = agg_to_send_done_us + (EDGE_RTT_FIXED_US / 2U);
     Serial.printf("[METRIC][E2E] id=%u duration_ms=%.2f estimated_e2e_us=%lu estimated_agg_e2e_us=%lu\n",
                   agg.window_id,
                   agg.duration_ms,
@@ -172,7 +172,7 @@ void TaskFFT(void* pvParameters) {
         releaseFFTWindow(window);
 
         if (stopFFTAfterRelease) {
-            vTaskSuspend(nullptr);
+            vTaskDelete(nullptr);
         }
     }
 }
@@ -258,15 +258,17 @@ void setup() {
         xQueueSend(fftFreeQueue, &ptr, portMAX_DELAY);
     }
 
-    xTaskCreatePinnedToCore(
-        TaskFFT,
-        "TaskFFT",
-        12288,
-        nullptr,
-        2,
-        nullptr,
-        0
-    );
+    if(ADAPTIVE_SAMPLING_FREQUENCY_ENABLED){
+        xTaskCreatePinnedToCore(
+            TaskFFT,
+            "TaskFFT",
+            12288,
+            nullptr,
+            2,
+            nullptr,
+            0
+        );
+    }
 
     xTaskCreatePinnedToCore(
         TaskAggregateValue,
