@@ -252,10 +252,13 @@ FFT analysis is implemented in [`ind_assign_project/lib/fft_processing/fft_proce
 5. finds the last _significant_ spectral bin ,
 6. derives the new sampling frequency according to Nyquist theorem as: $f_{s,adapted} = 2 \cdot f_{ref} \cdot ADAPTIVE\_MARGIN$, where `f_ref` is the maximum significant frequency, lower-bounded by `MIN_ADAPTED_FS = 10 Hz`.
 
-In this project, a _significant_ bin is an FFT frequency bin whose magnitude is large enough to be considered a meaningful component of the input signal, rather than noise or a negligible spectral artifact, in particular: $|X[k]| \geq \text{SIGNIFICANCE\_RATIO} \cdot \max_j |X[j]|$
+In this project, a _significant_ bin is an FFT frequency bin whose magnitude is large enough to be considered a meaningful component of the input signal, rather than noise or a negligible spectral artifact. In particular:
 
+$$
+|X[k]| \geq \text{SIGNIFICANCE\_RATIO} \cdot \max_j |X[j]|
+$$
 
-where $|X[k]|$ is the magnitude of the \(k\)-th FFT bin and SIGNIFICANCE_RATIO = 0.018 in the current configuration. This means that a bin is considered significant only if its magnitude is at least `1.8%` of the maximum spectral magnitude.
+where $|X[k]|$ is the magnitude of the $k$-th FFT bin and `SIGNIFICANCE_RATIO = 0.018` in the current configuration. This means that a bin is considered significant only if its magnitude is at least `1.8%` of the maximum spectral magnitude.
 
 The firmware averages the adapted frequency over `ADAPTIVE_SAMPLING_ROUNDS = 25` FFT windows before updating the global sampling period and suspending the FFT task.
 
